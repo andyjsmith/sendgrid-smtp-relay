@@ -1,5 +1,6 @@
 import asyncio
 import os
+import signal
 import sys
 import logging
 
@@ -13,6 +14,11 @@ from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import Envelope, Session, SMTP
 
 logger = logging.getLogger(__name__)
+
+
+def handle_sigterm(*args):
+    """Handle Docker SIGTERM like a SIGINT"""
+    raise KeyboardInterrupt()
 
 
 class MailHandler:
@@ -159,6 +165,9 @@ def main() -> int:
         FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
 
     logging.basicConfig(format=FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
+
+    # Handle Docker SIGTERM like a SIGINT
+    signal.signal(signal.SIGTERM, handle_sigterm)
 
     # Get and set the log level
     LOGLEVEL = os.environ.get("LOGLEVEL", "INFO").upper()
