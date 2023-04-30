@@ -1,3 +1,4 @@
+import asyncio
 import os
 import sys
 import logging
@@ -218,8 +219,16 @@ def main() -> int:
 
     # Run the SMTP server
     controller.start()
-    logger.info("Controller started. Press ENTER to exit.")
-    input()
+    logger.info("Server started")
+
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+    try:
+        loop.run_forever()
+    except KeyboardInterrupt:
+        logger.info("Shutting down")
+
     return 0
 
 
