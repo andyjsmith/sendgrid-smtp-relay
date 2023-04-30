@@ -132,18 +132,18 @@ class MailHandler:
         )
 
         # Send the SendGrid message
-        # try:
-        #     response = self.sg.send(message)
-        #     logger.debug("SendGrid response:")
-        #     logger.debug(response.status_code)
-        #     logger.debug(response.body)
-        #     logger.debug(response.headers)
-        # except Exception as e:
-        #     logger.error(
-        #         "Encountered an error when forwarding the message to SendGrid:"
-        #     )
-        #     logger.error(str(e))
-        #     return "550 Encountered an error when forwarding the message to SendGrid"
+        try:
+            response = self.sg.send(message)
+            logger.debug("SendGrid response:")
+            logger.debug(response.status_code)
+            logger.debug(response.body)
+            logger.debug(response.headers)
+        except Exception as e:
+            logger.error(
+                "Encountered an error when forwarding the message to SendGrid:"
+            )
+            logger.error(str(e))
+            return "550 Encountered an error when forwarding the message to SendGrid"
 
         logger.info(
             f"Sent email from {envelope.mail_from} to {', '.join(envelope.rcpt_tos)}"
