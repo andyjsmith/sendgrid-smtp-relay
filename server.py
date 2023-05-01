@@ -13,6 +13,9 @@ from sendgrid.helpers.mail import Mail
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import Envelope, Session, SMTP
 
+# Set up logger
+FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
+logging.basicConfig(format=FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
 logger = logging.getLogger(__name__)
 
 
@@ -159,13 +162,6 @@ class MailHandler:
 
 
 def main() -> int:
-    if os.environ.get("RUNNING_IN_DOCKER"):
-        FORMAT = "[%(levelname)s] %(message)s"
-    else:
-        FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
-
-    logging.basicConfig(format=FORMAT, datefmt="%Y-%m-%d %H:%M:%S")
-
     # Handle Docker SIGTERM like a SIGINT
     signal.signal(signal.SIGTERM, handle_sigterm)
 
