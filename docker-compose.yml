@@ -7,6 +7,8 @@ services:
       # Don't bind to 0.0.0.0 unless you have a properly setup firewall.
       # This service has no authentication!
       - "127.0.0.1:25:25"
+    volumes:
+      - /etc/localtime:/etc/localtime:ro
     environment:
       - SENDGRID_API_KEY=
       # - DOMAIN_FROM_ALLOWLIST=
