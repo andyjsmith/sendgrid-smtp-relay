@@ -6,6 +6,7 @@ import os
 import signal
 import sys
 from email import message_from_bytes
+from email.utils import parseaddr
 
 from aiosmtpd.controller import Controller
 from aiosmtpd.smtp import SMTP, Envelope, Session
@@ -44,22 +45,22 @@ class MailHandler:
     ) -> str:
         """Handle from address"""
 
-        # Check for valid from addresses
-        if self.domain_from_allowlist is None:
-            # No allowlist, so all domains are allowed
-            envelope.mail_from = address  # type: ignore
-            envelope.mail_options.extend(mail_options)
-            return "250 OK"
+        logger.debug("Receiving new email")
+        logger.debug(f"Setting FROM address: {address}")
 
-        # Check each domain in allowlist and see if destination address matches
-        if (
-            list(
-                filter(lambda d: address.endswith("@" + d), self.domain_from_allowlist)
-            )
-            == []
-        ):
-            logger.warning(f"Rejected an email from {address}, not in allowlist")
-            return f"550 not relaying to that domain: {address}"
+        # Check for valid from addresses
+        if self.domain_from_allowlist is not None:
+            # Check each domain in allowlist and see if destination address matches
+            if (
+                list(
+                    filter(
+                        lambda d: address.endswith("@" + d), self.domain_from_allowlist
+                    )
+                )
+                == []
+            ):
+                logger.warning(f"[rejected] Email from {address}, not in allowlist")
+                return f"550 not relaying from that domain: {address}"
 
         envelope.mail_from = address  # type: ignore
         envelope.mail_options.extend(mail_options)
@@ -76,35 +77,69 @@ class MailHandler:
         """Handle each addressee"""
 
         # Check for valid destination addresses
-        if self.domain_to_allowlist is None:
-            # No allowlist, so all domains are allowed
-            envelope.rcpt_tos.append(address)
-            envelope.rcpt_options.extend(rcpt_options)
-            return "250 OK"
+        if self.domain_to_allowlist is not None:
+            # Check each domain in allowlist and see if destination address matches
+            if (
+                list(
+                    filter(
+                        lambda d: address.endswith("@" + d), self.domain_to_allowlist
+                    )
+                )
+                == []
+            ):
+                logger.warning(f"[rejected] Email to {address}, not in allowlist")
+                return f"541 not relaying to that domain: {address}"
 
-        # Check each domain in allowlist and see if destination address matches
-        if (
-            list(filter(lambda d: address.endswith("@" + d), self.domain_to_allowlist))
-            == []
-        ):
-            logger.warning(f"Rejected an email to {address}, not in allowlist")
-            return f"550 not relaying to that domain: {address}"
-
+        logger.debug(f"Adding a TO address: {address}")
         envelope.rcpt_tos.append(address)
         envelope.rcpt_options.extend(rcpt_options)
         return "250 OK"
 
-    async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope):
+    async def handle_DATA(
+        self, server: SMTP, session: Session, envelope: Envelope
+    ) -> str:
         """Handle each email"""
 
-        if envelope.content is None:
-            envelope.content = b""
+        # Get the message content as bytes
+        content: bytes = b""
         if isinstance(envelope.content, str):
-            envelope.content = envelope.content.encode()
+            content = envelope.content.encode()
+        if isinstance(envelope.content, bytes):
+            content = envelope.content
+
+        # Get the SMTP from and to addresses
+        from_address: str = envelope.mail_from  # type: ignore
+        to_addresses: list[str] = envelope.rcpt_tos  # type: ignore
+
+        logger.debug("Message content:\n" + content.decode())
 
         parsed_message: email.message.Message = message_from_bytes(
-            envelope.content, policy=email.policy.default
+            content, policy=email.policy.default
         )
+
+        # Get the sender and recipient(s) from the MIME headers, which contains the name
+        # Note, this only supports a singular From and To header
+        from_mailboxes_raw: list[str] = parsed_message.get("From", "").split(",")
+        to_mailboxes_raw: list[str] = parsed_message.get("To", "").split(",")
+
+        if len(from_mailboxes_raw) != 1 or from_mailboxes_raw[0] == "":
+            logger.warning("[rejected] MIME FROM address missing or multiple specified")
+            return "550 message must have a singular From address"
+        if len(to_mailboxes_raw) < 1:
+            logger.warning("[rejected] MIME TO address missing")
+            return "550 message must have at least one To address"
+
+        # Make sure the MIME header from and to addresses equal the SMTP from and to addresses
+        from_mailbox: tuple[str, str] = parseaddr(from_mailboxes_raw[0])
+        if from_mailbox[1].strip() != from_address.strip():
+            logger.warning("[rejected] SMTP and MIME FROM addresses do not match")
+            return "550 message SMTP From addr does not match MIME From addr"
+
+        to_mailboxes: list[tuple[str, str]] = list(map(parseaddr, to_mailboxes_raw))
+        for _, addr in to_mailboxes:
+            if addr.strip() not in to_addresses:
+                logger.warning("[rejected] SMTP and MIME TO addresses do not match")
+                return "550 message MIME To addr not included in SMTP To addrs"
 
         body_text = None
         body_html = None
@@ -138,8 +173,9 @@ class MailHandler:
 
         # Create SendGrid message
         message = Mail(
-            from_email=envelope.mail_from,
-            to_emails=envelope.rcpt_tos,
+            # address format is reversed from normal (i.e. addr, name)
+            from_email=tuple(reversed(from_mailbox)),
+            to_emails=list(map(lambda x: tuple(reversed(x)), to_mailboxes)),
             subject=parsed_message.get("Subject"),
             html_content=body_html,
             plain_text_content=body_text,
@@ -159,9 +195,7 @@ class MailHandler:
             logger.error(str(e))
             return "550 Encountered an error when forwarding the message to SendGrid"
 
-        logger.info(
-            f"Sent email from {envelope.mail_from} to {', '.join(envelope.rcpt_tos)}"
-        )
+        logger.info(f"Sent email from {from_address} to {', '.join(to_addresses)}")
         return "250 Message accepted for delivery"
 
 
@@ -204,7 +238,7 @@ def main() -> int:
         for domain in domain_from_allowlist:
             logger.info(f"  - {domain}")
     else:
-        logger.info("No to allowlist")
+        logger.info("No from allowlist")
 
     if domain_to_allowlist:
         logger.info("Allowed to domains:")

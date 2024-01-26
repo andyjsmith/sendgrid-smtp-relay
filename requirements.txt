@@ -1,2 +1,2 @@
-sendgrid
-aiosmtpd
+sendgrid>=6.11.0
+aiosmtpd>=1.4.4

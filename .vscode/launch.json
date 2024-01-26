@@ -12,7 +12,8 @@
 			"console": "integratedTerminal",
 			"justMyCode": true,
 			"env": {
-				"SENDGRID_API_KEY": "TEST123"
+				"SENDGRID_API_KEY": "TEST123",
+				"LOGLEVEL": "debug"
 			}
 		}
 	]
