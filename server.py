@@ -1,17 +1,16 @@
 import asyncio
+import email.message
+import email.policy
+import logging
 import os
 import signal
 import sys
-import logging
-
-import email.message
-import email.policy
 from email import message_from_bytes
 
+from aiosmtpd.controller import Controller
+from aiosmtpd.smtp import SMTP, Envelope, Session
 from sendgrid import SendGridAPIClient
 from sendgrid.helpers.mail import Mail
-from aiosmtpd.controller import Controller
-from aiosmtpd.smtp import Envelope, Session, SMTP
 
 # Set up logger
 FORMAT = "%(asctime)s [%(levelname)s] %(message)s"
@@ -48,7 +47,7 @@ class MailHandler:
         # Check for valid from addresses
         if self.domain_from_allowlist is None:
             # No allowlist, so all domains are allowed
-            envelope.mail_from = address
+            envelope.mail_from = address  # type: ignore
             envelope.mail_options.extend(mail_options)
             return "250 OK"
 
@@ -62,7 +61,7 @@ class MailHandler:
             logger.warning(f"Rejected an email from {address}, not in allowlist")
             return f"550 not relaying to that domain: {address}"
 
-        envelope.mail_from = address
+        envelope.mail_from = address  # type: ignore
         envelope.mail_options.extend(mail_options)
         return "250 OK"
 
@@ -98,7 +97,12 @@ class MailHandler:
     async def handle_DATA(self, server: SMTP, session: Session, envelope: Envelope):
         """Handle each email"""
 
-        parsed_message: email.message.MIMEPart = message_from_bytes(
+        if envelope.content is None:
+            envelope.content = b""
+        if isinstance(envelope.content, str):
+            envelope.content = envelope.content.encode()
+
+        parsed_message: email.message.Message = message_from_bytes(
             envelope.content, policy=email.policy.default
         )
 
@@ -180,7 +184,7 @@ def main() -> int:
         logger.critical("You must set the SENDGRID_API_KEY environment variable")
         return 1
 
-    port = os.environ.get("PORT", 25)
+    port = int(os.environ.get("PORT", "25"))
     hostname = os.environ.get("HOSTNAME", "127.0.0.1")
 
     domain_from_allowlist = os.environ.get("DOMAIN_FROM_ALLOWLIST")
